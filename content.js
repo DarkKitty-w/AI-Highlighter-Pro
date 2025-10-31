@@ -9,11 +9,14 @@ class AIHighlighter {
       default: '#FFFF00'
     };
     this.highlights = new Map();
+    this.MAX_CHARS_PER_CALL = 10000;
+    // --- FIX DÉFINITIF: La variable TOTAL_MAX_CHARS a été supprimée ---
   }
 
   async analyzeAndHighlight(query, apiKey) {
     try {
       this.sendProgress('Extracting text from page...');
+      // --- FIX DÉFINITIF: extractPageText() lit maintenant TOUT le texte ---
       const pageText = this.extractPageText();
       
       if (!pageText || pageText.length < 50) {
@@ -26,7 +29,31 @@ class AIHighlighter {
       
       if (!result || !result.categories || result.categories.length === 0) {
         this.sendProgress('Local AI unavailable, trying cloud API...');
-        result = await this.useGeminiAPI(query, pageText, apiKey);
+        
+        // Logique de Découpage (Chunking)
+        if (pageText.length > this.MAX_CHARS_PER_CALL) {
+          this.sendProgress(`Text is large (${pageText.length} chars). Splitting into overlapping chunks...`);
+          const chunks = this.splitTextIntoChunks(pageText, this.MAX_CHARS_PER_CALL);
+          // --- VÉRIFIEZ CE CHIFFRE : Il devrait être bien supérieur à 6 ---
+          this.sendProgress(`Analyzing ${chunks.length} chunks in parallel...`); 
+
+          const promises = chunks.map((chunk, i) => 
+            this.useGeminiAPI(query, chunk, apiKey)
+              .catch(e => {
+                 console.error(`Error in chunk ${i+1}:`, e);
+                 return { categories: [] }; 
+              })
+          );
+          
+          const results = await Promise.all(promises);
+          const allCategories = results.flatMap(res => res.categories);
+          result = { categories: allCategories };
+          
+        } else {
+          this.sendProgress('Analyzing text with cloud API...');
+          result = await this.useGeminiAPI(query, pageText, apiKey);
+        }
+        
         aiUsed = 'cloud';
       }
 
@@ -40,7 +67,7 @@ class AIHighlighter {
           textLength: pageText.length
         };
       } else {
-        throw new Error('AI analysis completed but no relevant content was found for your query.');
+        throw new Error('AI analysis completed but no relevant content was found. This can happen if API filters blocked the content or no matches exist.');
       }
       
     } catch (error) {
@@ -62,14 +89,42 @@ class AIHighlighter {
       type: 'ANALYSIS_PROGRESS', 
       message: message
     }).catch(() => {
-      // Ignore errors if no listener
+      // Ignorer les erreurs
     });
+  }
+
+  // Découpage avec Chevauchement (Overlap)
+  splitTextIntoChunks(text, chunkSize) {
+    const chunks = [];
+    const overlapSize = Math.floor(chunkSize * 0.2); // 20% de chevauchement
+    let startIndex = 0;
+
+    while (startIndex < text.length) {
+      const endIndex = Math.min(startIndex + chunkSize, text.length);
+      const chunk = text.substring(startIndex, endIndex);
+      chunks.push(chunk);
+
+      if (endIndex === text.length) {
+        break;
+      }
+
+      startIndex += (chunkSize - overlapSize);
+      
+      // S'assurer qu'on ne rate pas la fin
+      if (startIndex >= text.length - overlapSize && startIndex < text.length) {
+         chunks.push(text.substring(startIndex));
+         break;
+      }
+    }
+    return chunks;
   }
 
   async tryLocalAI(query, text) {
     try {
+      // Limiter le texte pour Nano, qui est moins puissant
+      const nanoText = text.substring(0, this.MAX_CHARS_PER_CALL);
       if (window.ai && window.ai.prompt) {
-        const prompt = this.buildPrompt(query, text);
+        const prompt = this.buildPrompt(query, nanoText);
         const response = await window.ai.prompt(prompt);
         return this.parseAIResponse(response);
       } else {
@@ -85,74 +140,66 @@ class AIHighlighter {
     if (!apiKey) {
       throw new Error('API key required for cloud AI. Please provide your Gemini API key in the extension panel.');
     }
-
     if (!navigator.onLine) {
       throw new Error('Network connection required for cloud AI. Please check your internet connection.');
     }
 
     const prompt = this.buildPrompt(query, text);
     
+    const generationConfig = {
+      temperature: 0.1,
+      topK: 32,
+      topP: 0.95,
+      maxOutputTokens: 8192,
+    };
+    
+    const requestBody = JSON.stringify({
+      contents: [{
+        parts: [{ text: prompt }]
+      }],
+      generationConfig: generationConfig,
+      safetySettings: [
+        { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+        { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+        { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+        { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
+      ]
+    });
+
     try {
-      // FIXED: Use the correct model name - gemini-2.0-flash or gemini-1.5-flash
-      const model = "gemini-1.5-flash"; // Try this first
-      // Alternative models you can try:
-      // "gemini-2.0-flash-exp" 
-      // "gemini-1.5-pro"
-      // "gemini-1.0-pro"
-      
+      const model = "gemini-2.5-flash";
       const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${apiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{
-              parts: [{ text: prompt }]
-            }],
-            generationConfig: {
-              temperature: 0.1,
-              topK: 32,
-              topP: 0.95,
-              maxOutputTokens: 2048,
-            }
-          })
+          body: requestBody
         }
       );
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        
-        // If 404, try alternative models
         if (response.status === 404) {
-          // Try alternative models
-          const alternativeModels = ["gemini-2.0-flash-exp", "gemini-1.5-pro", "gemini-1.0-pro"];
+          // Logique de Fallback (inchangée)
+          const alternativeModels = [
+            { name: "gemini-1.5-pro-latest", version: "v1beta" },
+            { name: "gemini-1.0-pro", version: "v1" }
+          ];
           for (const altModel of alternativeModels) {
             try {
               const altResponse = await fetch(
-                `https://generativelanguage.googleapis.com/v1/models/${altModel}:generateContent?key=${apiKey}`,
-                {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    contents: [{
-                      parts: [{ text: prompt }]
-                    }]
-                  })
-                }
+                `https://generativelanguage.googleapis.com/${altModel.version}/models/${altModel.name}:generateContent?key=${apiKey}`,
+                { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: requestBody }
               );
-              
               if (altResponse.ok) {
                 const altData = await altResponse.json();
                 if (altData.candidates?.[0]?.content?.parts?.[0]?.text) {
-                  const responseText = altData.candidates[0].content.parts[0].text;
-                  return this.parseAIResponse(responseText);
+                  return this.parseAIResponse(altData.candidates[0].content.parts[0].text);
                 }
               }
-            } catch (altError) {
-              continue; // Try next model
-            }
+            } catch (altError) { continue; }
           }
-          throw new Error(`All models failed. Available models: gemini-1.5-flash, gemini-2.0-flash-exp, gemini-1.5-pro, gemini-1.0-pro`);
+          throw new Error(`All models failed. Primary and fallbacks could not be reached.`);
         } else if (response.status === 401) {
           throw new Error('Invalid API key. Please check your Gemini API key.');
         } else if (response.status === 429) {
@@ -165,7 +212,10 @@ class AIHighlighter {
       const data = await response.json();
       
       if (!data.candidates?.[0]?.content?.parts?.[0]?.text) {
-        throw new Error('Invalid response format from Gemini API');
+        if (data.promptFeedback?.blockReason) {
+          throw new Error(`API blocked request: ${data.promptFeedback.blockReason}`);
+        }
+        throw new Error('Invalid response format from Gemini API (No candidate text)');
       }
 
       const responseText = data.candidates[0].content.parts[0].text;
@@ -179,41 +229,43 @@ class AIHighlighter {
     }
   }
 
+  // --- FIX DÉFINITIF: La limite TOTAL_MAX_CHARS a été supprimée ---
   extractPageText() {
-    // Clone the document to avoid modifying the original
     const clone = document.cloneNode(true);
-    
-    // Remove unwanted elements
     clone.querySelectorAll('script, style, nav, footer, header, iframe, noscript, .ads, .advertisement').forEach(el => el.remove());
     
-    // Get text content
     const text = clone.body?.innerText || '';
     
-    // Clean up text - remove extra whitespace and limit length
-    return text
-      .replace(/\s+/g, ' ')
-      .replace(/\n+/g, ' ')
-      .trim()
-      .substring(0, 15000); // Limit for API constraints
+    const cleanedText = text
+      .replace(/(\n\s*){2,}/g, '\n') // Standardise les sauts de paragraphe
+      .replace(/[ \t]+/g, ' ')       // Compresse les espaces
+      .replace(/ \n/g, '\n')        // Nettoie les fins de ligne
+      .trim();
+
+    // Il n'y a plus de 'if' ou de '.substring()' ici.
+    return cleanedText;
   }
+  // --- Fin du fix ---
 
   buildPrompt(query, text) {
-    return `Analyze the following text and identify different categories mentioned in the query: "${query}"
-
-TEXT TO ANALYZE:
+    return `You are a silent text analysis engine.
+Your ONLY task is to extract information from the <TEXT_TO_ANALYZE> based on the user's <QUERY>.
+Your response MUST be ONLY a valid JSON array.
+Do NOT include any pre-amble, explanation, or conversational text before or after the JSON.
+<QUERY>
+${query}
+</QUERY>
+<TEXT_TO_ANALYZE>
 ${text}
-
+</TEXT_TO_ANALYZE>
 Return ONLY a JSON array where each object has:
-- "text": exact text snippet (2-15 words)
-- "category": one of: goal, definition, keypoint, risk, date, or other relevant category based on the query
-- "reason": brief explanation why this text matches the category
-
-IMPORTANT: 
-- Return ONLY valid JSON, no other text
-- Use exact text snippets from the provided content
-- Categories should match the user's query intent
-
-Example response for query "goals and definitions":
+- "text": an exact text snippet (2-15 words) from the <TEXT_TO_ANALYZE>.
+- "category": one of: goal, definition, keypoint, risk, date, or another relevant category based on the <QUERY>.
+- "reason": a brief explanation for why this snippet matches the category.
+IMPORTANT:
+- Find ALL possible matches, not just a few.
+- If the <QUERY> has multiple parts (e.g., "definitions and formulas"), find all items for ALL parts.
+Example response:
 [
   {"text": "complete project by Q4 2024", "category": "goal", "reason": "mentions project completion timeline"},
   {"text": "machine learning algorithm", "category": "definition", "reason": "defines a technical concept"}
@@ -222,46 +274,51 @@ Example response for query "goals and definitions":
 
   parseAIResponse(response) {
     try {
-      // Clean the response and extract JSON
       const cleanedResponse = response.replace(/```json\n?|\n?```/g, '').trim();
-      const jsonMatch = cleanedResponse.match(/\[[\s\S]*\]/);
+      const jsonMatch = cleanedResponse.match(/\[[\s\S]*\]|\{[\s\S]*\}/);
       
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          // Validate each item has required fields
+        if (Array.isArray(parsed)) {
           const validItems = parsed.filter(item => 
             item.text && item.category && item.reason &&
             typeof item.text === 'string' &&
             item.text.length >= 2 && item.text.length <= 200
           );
-          
           if (validItems.length > 0) {
             return { categories: validItems };
           }
         }
       }
-      throw new Error('Invalid JSON response from AI');
+      // Ne pas lancer d'erreur si un chunk est vide, juste retourner vide
+      return { categories: [] };
     } catch (error) {
       console.error('Failed to parse AI response:', error, 'Response:', response);
-      throw new Error('AI returned invalid format. Please try again with a different query.');
+      return { categories: [] }; // Renvoyer vide en cas d'erreur de parsing
     }
   }
 
   applyHighlights(categories) {
     this.clearHighlights();
+    const highlightedTexts = new Set(); 
     
     categories.forEach((item, index) => {
+      const uniqueKey = item.text.toLowerCase().trim();
+      if (highlightedTexts.has(uniqueKey)) {
+        return; // Empêche les doublons du chevauchement
+      }
       const color = this.highlightColors[item.category] || this.highlightColors.default;
-      this.highlightText(item.text, color, item.category, index, item.reason);
+      const success = this.highlightText(item.text, color, item.category, index, item.reason);
+      if (success) {
+        highlightedTexts.add(uniqueKey);
+      }
     });
   }
 
   highlightText(text, color, category, id, reason) {
-    if (!text || text.length < 2) return;
+    if (!text || text.length < 2) return false;
     
     try {
-      // Escape text for regex and handle special characters
       const escapedText = this.escapeRegExp(text);
       const regex = new RegExp(escapedText, 'gi');
       const walker = document.createTreeWalker(
@@ -269,7 +326,6 @@ Example response for query "goals and definitions":
         NodeFilter.SHOW_TEXT,
         {
           acceptNode: function(node) {
-            // Skip text nodes in script, style, and hidden elements
             if (node.parentNode.nodeName === 'SCRIPT' || 
                 node.parentNode.nodeName === 'STYLE' ||
                 node.parentNode.style?.display === 'none' ||
@@ -284,8 +340,18 @@ Example response for query "goals and definitions":
 
       let found = false;
       let node;
+      const nodesToProcess = [];
       while (node = walker.nextNode()) {
         if (node.textContent.match(regex)) {
+          nodesToProcess.push(node);
+        }
+      }
+      
+      nodesToProcess.reverse().forEach(node => {
+        const matches = [...node.textContent.matchAll(regex)];
+        matches.reverse().forEach(match => {
+          const matchText = match[0];
+          const matchIndex = match.index;
           const span = document.createElement('span');
           span.className = 'ai-highlight';
           span.style.backgroundColor = color;
@@ -293,24 +359,29 @@ Example response for query "goals and definitions":
           span.style.borderRadius = '2px';
           span.style.padding = '1px 2px';
           span.setAttribute('data-category', category);
-          span.setAttribute('data-highlight-id', id);
+          span.setAttribute('data-highlight-id', `${id}-${matchIndex}`);
           span.setAttribute('title', `${category}: ${reason}`);
           
-          const newNode = node.splitText(node.textContent.indexOf(text));
-          newNode.splitText(text.length);
-          span.appendChild(newNode.cloneNode(true));
-          newNode.parentNode.replaceChild(span, newNode);
-          
-          this.highlights.set(id, span);
-          found = true;
-        }
-      }
+          try {
+            const newNode = node.splitText(matchIndex);
+            newNode.splitText(matchText.length);
+            span.appendChild(newNode.cloneNode(true));
+            newNode.parentNode.replaceChild(span, newNode);
+            this.highlights.set(`${id}-${matchIndex}`, span);
+            found = true;
+          } catch (e) {
+            console.warn('Error splitting text node for highlight:', e);
+          }
+        });
+      });
 
       if (!found) {
         console.warn('Text not found for highlighting:', text.substring(0, 50));
       }
+      return found;
     } catch (error) {
       console.warn('Failed to highlight text:', text.substring(0, 50), error);
+      return false;
     }
   }
 
@@ -330,10 +401,10 @@ Example response for query "goals and definitions":
   }
 }
 
-// Initialize highlighter
+// Initialiser le highlighter
 const highlighter = new AIHighlighter();
 
-// Message listener
+// Écouteur de messages
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'analyzeAndHighlight') {
     highlighter.analyzeAndHighlight(request.query, request.apiKey)
@@ -343,7 +414,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         error: error.message,
         details: { stack: error.stack }
       }));
-    return true;
+    return true; // Indique une réponse asynchrone
   }
   
   if (request.action === 'clearHighlights') {
