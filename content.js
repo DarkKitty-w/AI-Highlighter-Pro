@@ -3,26 +3,19 @@ console.log('AI Highlighter content script loaded');
 class AIHighlighter {
   constructor() {
     console.log('AIHighlighter initialized');
-    // --- MODIFICATION ---
-    // Les couleurs ne sont plus prédéfinies.
-    // Nous les stockerons ici au fur et à mesure.
     this.highlightColors = new Map();
-    // --- FIN MODIFICATION ---
-    
     this.highlights = new Map();
     this.styledElements = new Map();
     this.MAX_CHARS_PER_CALL = 15000;
+    this.localAIAvailable = null; // Cache pour la détection Gemini Nano
   }
 
-  // --- NOUVELLE FONCTION ---
-  // Génère une couleur pastel aléatoire et lisible
   generateRandomColor() {
-    const hue = Math.floor(Math.random() * 360); // 0-359
-    const saturation = Math.floor(Math.random() * 20) + 70; // 70-90% (pastel)
-    const lightness = Math.floor(Math.random() * 10) + 80; // 80-90% (lumineux)
+    const hue = Math.floor(Math.random() * 360);
+    const saturation = Math.floor(Math.random() * 20) + 70;
+    const lightness = Math.floor(Math.random() * 10) + 80;
     return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
   }
-  // --- FIN NOUVELLE FONCTION ---
 
   async analyzeAndHighlight(query, apiKey) {
     try {
@@ -33,20 +26,25 @@ class AIHighlighter {
         throw new Error('No sufficient text content found on this page.');
       }
 
-      console.log(`Mapping complete. Text length: ${pageText.length}`);
+      console.log(`Extracted ${pageText.length} characters of text`);
+
+      // Vérifier Gemini Nano une seule fois par session
+      if (this.localAIAvailable === null) {
+        this.localAIAvailable = await this.checkGeminiNanoAvailability();
+        console.log(`Gemini Nano available: ${this.localAIAvailable}`);
+      }
+
       this.sendProgress('Trying local AI (Gemini Nano)...');
       let result = await this.tryLocalAI(query, pageText);
       let aiUsed = 'local';
       
       if (!result || !result.categories || result.categories.length === 0) {
-        console.log('Local AI failed or not available, trying cloud API...');
         this.sendProgress('Local AI unavailable, trying cloud API...');
         
         if (pageText.length > this.MAX_CHARS_PER_CALL) {
           this.sendProgress(`Step 2/4: Splitting ${pageText.length} chars into overlapping chunks...`);
           const chunks = this.splitTextIntoChunks(pageText, this.MAX_CHARS_PER_CALL);
           this.sendProgress(`Step 3/4: Analyzing ${chunks.length} chunks in parallel...`);
-          console.log(`Analyzing ${chunks.length} chunks...`);
 
           const promises = chunks.map((chunk, i) => 
             this.useGeminiAPI(query, chunk, apiKey)
@@ -68,18 +66,18 @@ class AIHighlighter {
         aiUsed = 'cloud';
       }
 
-      console.log('AI analysis complete. Result:', result);
       if (result && result.categories && result.categories.length > 0) {
         this.sendProgress(`Step 4/4: Applying ${result.categories.length} highlights...`);
         this.applyHighlights(result.categories);
 
         const colorsPayload = Object.fromEntries(this.highlightColors);
-        console.log('Sending legend update to sidepanel:', colorsPayload);
         chrome.runtime.sendMessage({ 
           type: 'UPDATE_LEGEND', 
           payload: colorsPayload
         }).catch(e => console.log("Sidepanel not open, can't update legend."));
 
+        console.log(`Analysis completed successfully with ${this.highlights.size + this.styledElements.size} highlights`);
+        
         return { 
           success: true, 
           highlightCount: this.highlights.size + this.styledElements.size,
@@ -87,12 +85,11 @@ class AIHighlighter {
           textLength: pageText.length
         };
       } else {
-        console.log('AI analysis completed but no relevant content was found.');
         throw new Error('AI analysis completed but no relevant content was found.');
       }
       
     } catch (error) {
-      console.error('Main analyzeAndHighlight error:', error);
+      console.error('Analysis error:', error);
       this.clearHighlights();
       return { 
         success: false, 
@@ -102,14 +99,123 @@ class AIHighlighter {
     }
   }
 
+  // NOUVELLE FONCTION : Vérifie la disponibilité de Gemini Nano
+  async checkGeminiNanoAvailability() {
+    try {
+      console.log('Checking for Gemini Nano availability...');
+      
+      // Vérifier si l'API window.ai existe
+      if (typeof window.ai === 'undefined') {
+        console.log('❌ window.ai not available');
+        return false;
+      }
+
+      // Méthode 1: Vérifier la propriété 'available' (API standard)
+      if (window.ai.available) {
+        try {
+          const availability = await window.ai.available;
+          console.log(`Gemini Nano availability: ${availability}`);
+          if (availability === 'readily' || availability === 'after-download') {
+            console.log('✅ Gemini Nano available via window.ai.available');
+            return true;
+          }
+        } catch (e) {
+          console.log('window.ai.available check failed:', e);
+        }
+      }
+
+      // Méthode 2: Vérifier les méthodes directes
+      const hasPrompt = typeof window.ai.prompt === 'function';
+      const hasCreateTextSession = typeof window.ai.createTextSession === 'function';
+      
+      console.log(`Gemini Nano methods - prompt: ${hasPrompt}, createTextSession: ${hasCreateTextSession}`);
+      
+      if (hasPrompt || hasCreateTextSession) {
+        console.log('✅ Gemini Nano API methods detected');
+        return true;
+      }
+
+      // Méthode 3: Vérifier canCreateTextSession
+      if (typeof window.ai.canCreateTextSession === 'function') {
+        try {
+          const canCreate = await window.ai.canCreateTextSession();
+          console.log(`Gemini Nano canCreateTextSession: ${canCreate}`);
+          return canCreate;
+        } catch (e) {
+          console.log('window.ai.canCreateTextSession check failed:', e);
+        }
+      }
+
+      console.log('❌ No usable Gemini Nano API found');
+      return false;
+      
+    } catch (error) {
+      console.log('Error checking Gemini Nano availability:', error);
+      return false;
+    }
+  }
+
+  async tryLocalAI(query, text) {
+    // Si Gemini Nano n'est pas disponible, retourner null immédiatement
+    if (!this.localAIAvailable) {
+      return null;
+    }
+
+    try {
+      console.log('🔄 Using local AI (Gemini Nano)');
+      
+      // Limite conservatrice pour Gemini Nano
+      const nanoText = text.substring(0, Math.min(this.MAX_CHARS_PER_CALL, 30000));
+      console.log(`Sending ${nanoText.length} chars to Gemini Nano`);
+      
+      const prompt = this.buildPrompt(query, nanoText);
+      let response;
+
+      // Essayer différentes méthodes d'appel de Gemini Nano
+      
+      // Méthode 1: window.ai.prompt (API simple)
+      if (typeof window.ai.prompt === 'function') {
+        console.log('Using window.ai.prompt');
+        response = await window.ai.prompt(prompt);
+      }
+      // Méthode 2: window.ai.createTextSession (API session)
+      else if (typeof window.ai.createTextSession === 'function') {
+        console.log('Using window.ai.createTextSession');
+        const session = await window.ai.createTextSession();
+        response = await session.prompt(prompt);
+      }
+      // Méthode 3: window.ai.canCreateTextSession (API moderne)
+      else if (typeof window.ai.canCreateTextSession === 'function') {
+        console.log('Using window.ai.canCreateTextSession');
+        const canCreate = await window.ai.canCreateTextSession();
+        if (canCreate) {
+          const session = await window.ai.createTextSession();
+          response = await session.prompt(prompt);
+        } else {
+          throw new Error('Cannot create text session');
+        }
+      }
+      else {
+        throw new Error('No compatible Gemini Nano API method found');
+      }
+
+      console.log('✅ Gemini Nano response received');
+      return this.parseAIResponse(response);
+      
+    } catch (error) {
+      console.log('❌ Local AI (Gemini Nano) failed:', error.message);
+      // En cas d'échec, marquer comme non disponible pour cette session
+      this.localAIAvailable = false;
+      return null;
+    }
+  }
+
   sendProgress(message) {
-    console.log('Sending progress:', message);
+    console.log('Progress:', message);
     chrome.runtime.sendMessage({
       type: 'ANALYSIS_PROGRESS', 
       message: message
-    }).catch(() => {
-      console.warn('Could not send progress, sidepanel may be closed.');
-    });
+    }).catch(() => {});
   }
 
   extractPageTextAndTagElements() {
@@ -119,7 +225,8 @@ class AIHighlighter {
 
     const selectors = 'p, li, dd, h1, h2, h3, h4, th, td, blockquote, pre, .katex, .katex-display, .MathJax_Display';
     const elements = document.body.querySelectorAll(selectors);
-    console.log(`Found ${elements.length} potential elements to tag.`);
+
+    console.log(`Found ${elements.length} potential text elements`);
 
     elements.forEach(el => {
       if (el.closest('nav, footer, script, style')) {
@@ -142,8 +249,8 @@ class AIHighlighter {
       el.setAttribute('data-ai-id', id);
       aiText += `[ID:${id}]${text}[FIN ID]\n\n`;
     });
-    
-    console.log(`Tagged ${chunkIndex} elements.`);
+
+    console.log(`Tagged ${chunkIndex} elements with data-ai-id`);
     return aiText;
   }
 
@@ -173,24 +280,9 @@ class AIHighlighter {
       startIndex = finalEndIndex - overlapSize;
       if (startIndex < 0) startIndex = 0;
     }
+    
+    console.log(`Split text into ${chunks.length} chunks`);
     return chunks;
-  }
-
-  async tryLocalAI(query, text) {
-    try {
-      const nanoText = text.substring(0, this.MAX_CHARS_PER_CALL);
-      if (window.ai && window.ai.prompt) {
-        console.log('Trying local AI (Gemini Nano)...');
-        const prompt = this.buildPrompt(query, nanoText);
-        const response = await window.ai.prompt(prompt);
-        return this.parseAIResponse(response);
-      } else {
-        throw new Error('Local AI (Gemini Nano) is not available in this browser.');
-      }
-    } catch (error) {
-      console.log('Local AI failed:', error.message);
-      return null;
-    }
   }
 
   async useGeminiAPI(query, text, apiKey) {
@@ -218,8 +310,9 @@ class AIHighlighter {
     });
 
     try {
-      console.log('Sending request to Gemini API...');
       const model = "gemini-2.5-flash";
+      console.log('🌐 Sending request to Gemini API...');
+      
       const response = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
         {
@@ -230,6 +323,8 @@ class AIHighlighter {
       );
 
       if (!response.ok) {
+        const errorText = await response.text();
+        console.error('API response error:', errorText);
         throw new Error(`API error: ${response.status} ${response.statusText}`);
       }
 
@@ -243,10 +338,11 @@ class AIHighlighter {
       }
 
       const responseText = data.candidates[0].content.parts[0].text;
+      console.log('✅ Received response from Gemini API');
       return this.parseAIResponse(responseText);
       
     } catch (error) {
-      console.error('Gemini API call failed:', error);
+      console.error('Gemini API error:', error);
       throw error;
     }
   }
@@ -281,6 +377,7 @@ Example response:
 
   parseAIResponse(response) {
     try {
+      console.log('Parsing AI response...');
       const cleanedResponse = response.replace(/```json\n?|\n?```/g, '').trim();
       const jsonMatch = cleanedResponse.match(/\[[\s\S]*\]|\{[\s\S]*\}/);
       
@@ -292,13 +389,13 @@ Example response:
             item.category && 
             item.passage_id 
           );
+          console.log(`Parsed ${validItems.length} valid categories from AI response`);
           if (validItems.length > 0) {
-            console.log(`Parsed ${validItems.length} items from AI response`);
             return { categories: validItems };
           }
         }
       }
-      console.warn('Could not find valid JSON in AI response', response);
+      console.log('No valid categories found in AI response');
       return { categories: [] };
     } catch (error) {
       console.error('Failed to parse AI response:', error, 'Response:', response);
@@ -307,6 +404,7 @@ Example response:
   }
 
   applyHighlights(categories) {
+    console.log(`Applying highlights for ${categories.length} categories`);
     const highlightedKeys = new Set(); 
     const passagesToHighlight = new Map();
 
@@ -320,8 +418,8 @@ Example response:
       const categoryKey = item.category.toLowerCase();
       if (!this.highlightColors.has(categoryKey)) {
         const newColor = this.generateRandomColor();
+        console.log(`Generated color ${newColor} for category: ${categoryKey}`);
         this.highlightColors.set(categoryKey, newColor);
-        console.log(`Generated new color for category '${categoryKey}': ${newColor}`);
       }
       item.color = this.highlightColors.get(categoryKey);
 
@@ -330,13 +428,12 @@ Example response:
       }
       passagesToHighlight.get(item.passage_id).push(item);
     });
-    
-    console.log(`Applying highlights to ${passagesToHighlight.size} elements...`);
+
+    console.log(`Highlighting ${passagesToHighlight.size} unique passages`);
     passagesToHighlight.forEach((items, passage_id) => {
       this.highlightTextInElement(passage_id, items);
     });
   }
-
 
   highlightTextInElement(passage_id, items) {
     const element = document.querySelector(`[data-ai-id="${passage_id}"]`);
@@ -353,7 +450,6 @@ Example response:
 
     if (isFormulaBlock) {
       const item = items[0]; 
-      console.log(`Highlighting formula block ${passage_id}`);
       element.style.backgroundColor = item.color;
       element.style.padding = '2px 4px';
       element.style.borderRadius = '3px';
@@ -364,67 +460,223 @@ Example response:
         element: element,
         originalStyle: element.style.cssText
       });
+      console.log(`Styled formula element: ${passage_id}`);
       return;
     }
 
     try {
+      // NOUVELLE APPROCHE : Recherche par mots-clés pour les textes longs
       items.sort((a, b) => b.text.length - a.text.length);
+      
+      const elementText = element.textContent || element.innerText;
       let currentHtml = element.innerHTML;
+      let foundAny = false;
 
       items.forEach((item, index) => {
-        const cleanedText = item.text.trim().replace(/\.$/, '');
+        const cleanedText = item.text.trim();
         if (cleanedText.length < 2) return;
 
-        const baseEscapedText = this.escapeRegExp(cleanedText);
-        const regexText = baseEscapedText.split(/\\n|\\s/g).filter(Boolean).join('(<[^>]+>|\\s|\\n|&nbsp;)*?');
-        const regex = new RegExp(regexText, 'gi');
-
-        const color = item.color;
-        const itemUniqueId = `${passage_id}-${index}`;
+        // STRATÉGIE AMÉLIORÉE : Recherche par étapes
+        let found = false;
         
-        let matchFound = false;
-        currentHtml = currentHtml.replace(regex, (match) => {
-          if (match.includes('class="ai-highlight"')) {
-            return match; 
+        // Étape 1: Recherche exacte du texte complet
+        if (elementText.includes(cleanedText)) {
+          found = this.highlightExactMatch(currentHtml, cleanedText, item, passage_id, index);
+          if (found) {
+            currentHtml = found.newHtml;
+            foundAny = true;
+            console.log(`✓ Exact match: "${cleanedText.substring(0, 50)}..."`);
           }
-          
-          matchFound = true;
-          const span = document.createElement('span');
-          span.className = 'ai-highlight';
-          span.style.backgroundColor = color;
-          span.style.cursor = 'help';
-          span.setAttribute('data-category', item.category);
-          span.setAttribute('data-highlight-id', itemUniqueId);
-          span.setAttribute('title', `${item.category}: ${item.reason || ''}`);
-          span.innerHTML = match; 
-
-          this.highlights.set(itemUniqueId, span); 
-          return span.outerHTML;
-        });
+        }
         
-        if (!matchFound) {
-           console.warn(`Text not found *within* its passage: ${cleanedText} in [${passage_id}]`);
+        // Étape 2: Si texte trop long, chercher par phrases
+        if (!found && cleanedText.length > 100) {
+          const sentences = this.splitIntoSentences(cleanedText);
+          for (const sentence of sentences) {
+            if (sentence.length > 20 && elementText.includes(sentence)) {
+              found = this.highlightExactMatch(currentHtml, sentence, item, passage_id, index);
+              if (found) {
+                currentHtml = found.newHtml;
+                foundAny = true;
+                console.log(`✓ Sentence match: "${sentence.substring(0, 50)}..."`);
+                break;
+              }
+            }
+          }
+        }
+        
+        // Étape 3: Recherche par mots-clés significatifs
+        if (!found) {
+          const keywords = this.extractKeywords(cleanedText);
+          for (const keyword of keywords) {
+            if (keyword.length > 10 && elementText.includes(keyword)) {
+              found = this.highlightExactMatch(currentHtml, keyword, item, passage_id, index);
+              if (found) {
+                currentHtml = found.newHtml;
+                foundAny = true;
+                console.log(`✓ Keyword match: "${keyword}"`);
+                break;
+              }
+            }
+          }
+        }
+
+        // Étape 4: Recherche avec caractères normalisés
+        if (!found) {
+          const normalizedPatterns = this.generateNormalizedPatterns(cleanedText);
+          for (const pattern of normalizedPatterns) {
+            if (elementText.includes(pattern)) {
+              found = this.highlightExactMatch(currentHtml, pattern, item, passage_id, index);
+              if (found) {
+                currentHtml = found.newHtml;
+                foundAny = true;
+                console.log(`✓ Normalized match: "${pattern.substring(0, 50)}..."`);
+                break;
+              }
+            }
+          }
+        }
+
+        if (!found) {
+          console.warn(`Text not found *within* its passage: ${cleanedText} in [${passage_id}]`);
         }
       });
 
-      element.innerHTML = currentHtml;
+      // Appliquer les changements seulement si on a trouvé des correspondances
+      if (foundAny) {
+        element.innerHTML = currentHtml;
 
-      element.querySelectorAll('.ai-highlight').forEach(span => {
-        const id = span.getAttribute('data-highlight-id');
-        this.highlights.set(id, span);
-      });
+        // Mettre à jour la map des highlights
+        element.querySelectorAll('.ai-highlight').forEach(span => {
+          const id = span.getAttribute('data-highlight-id');
+          if (id) {
+            this.highlights.set(id, span);
+          }
+        });
+
+        console.log(`✓ Highlighted items in element: ${passage_id}`);
+      } else {
+        console.warn(`✗ No text matches found in element: ${passage_id}`);
+      }
 
     } catch (error) {
-      console.warn('Failed to highlight text:', items[0].text, error);
+      console.error('Failed to highlight text in element:', passage_id, error);
     }
   }
 
-  escapeRegExp(string) {
-    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // NOUVELLE FONCTION : Met en évidence une correspondance exacte
+  highlightExactMatch(html, textToHighlight, item, passage_id, index) {
+    try {
+      const color = item.color;
+      const itemUniqueId = `${passage_id}-${index}`;
+      
+      const span = document.createElement('span');
+      span.className = 'ai-highlight';
+      span.style.backgroundColor = color;
+      span.style.cursor = 'help';
+      span.setAttribute('data-category', item.category);
+      span.setAttribute('data-highlight-id', itemUniqueId);
+      span.setAttribute('title', `${item.category}: ${item.reason || ''}`);
+      span.textContent = textToHighlight;
+
+      const newHtml = html.replace(textToHighlight, span.outerHTML);
+      this.highlights.set(itemUniqueId, span);
+      
+      return { success: true, newHtml };
+    } catch (error) {
+      console.warn(`Failed to highlight exact match: ${textToHighlight}`, error);
+      return { success: false, newHtml: html };
+    }
+  }
+
+  // NOUVELLE FONCTION : Divise le texte en phrases
+  splitIntoSentences(text) {
+    // Divise par les points, points d'exclamation, points d'interrogation, etc.
+    return text.split(/[.!?]+/).filter(sentence => 
+      sentence.trim().length > 10 // Seulement les phrases significatives
+    ).map(sentence => sentence.trim());
+  }
+
+  // NOUVELLE FONCTION : Extrait les mots-clés significatifs
+  extractKeywords(text) {
+    const words = text.split(/\s+/);
+    return words.filter(word => 
+      word.length > 5 && // Mots assez longs
+      !this.isCommonWord(word) // Pas des mots trop communs
+    );
+  }
+
+  // NOUVELLE FONCTION : Vérifie si un mot est trop commun
+  isCommonWord(word) {
+    const commonWords = ['dans', 'pour', 'avec', 'sans', 'sous', 'sur', 'entre', 'parmi', 'pendant', 'depuis'];
+    return commonWords.includes(word.toLowerCase());
+  }
+
+  // NOUVELLE FONCTION : Génère des patterns avec caractères normalisés
+  generateNormalizedPatterns(text) {
+    const patterns = [];
+    
+    // Pattern original
+    patterns.push(text);
+    
+    // Pattern sans ponctuation finale
+    const withoutFinalPunctuation = text.replace(/[.,;:!?]$/, '');
+    if (withoutFinalPunctuation !== text) {
+      patterns.push(withoutFinalPunctuation);
+    }
+    
+    // Pattern avec espaces normalisés
+    const normalizedSpaces = text.replace(/\s+/g, ' ');
+    if (normalizedSpaces !== text) {
+      patterns.push(normalizedSpaces);
+    }
+    
+    // Pattern avec guillemets français normalisés
+    const normalizedFrenchQuotes = text
+      .replace(/«\s*/g, '"')
+      .replace(/\s*»/g, '"');
+    if (normalizedFrenchQuotes !== text) {
+      patterns.push(normalizedFrenchQuotes);
+    }
+    
+    // Pattern avec tirets cadratins normalisés
+    const normalizedDashes = text.replace(/—/g, '-');
+    if (normalizedDashes !== text) {
+      patterns.push(normalizedDashes);
+    }
+    
+    // Pattern avec fractions normalisées
+    const normalizedFractions = text.replace(/⁄/g, '/');
+    if (normalizedFractions !== text) {
+      patterns.push(normalizedFractions);
+    }
+    
+    // Pattern avec apostrophes normalisées
+    const normalizedApostrophes = text
+      .replace(/[''´`]/g, "'")
+      .replace(/&#39;/g, "'")
+      .replace(/&apos;/g, "'");
+    if (normalizedApostrophes !== text) {
+      patterns.push(normalizedApostrophes);
+    }
+    
+    // Pattern avec guillemets normalisés
+    const normalizedQuotes = text
+      .replace(/["""]/g, '"')
+      .replace(/&quot;/g, '"')
+      .replace(/&ldquo;/g, '"')
+      .replace(/&rdquo;/g, '"');
+    if (normalizedQuotes !== text) {
+      patterns.push(normalizedQuotes);
+    }
+    
+    return patterns.filter(pattern => pattern.length >= 5); // Patterns significatifs seulement
   }
 
   clearHighlights() {
-    this.highlights.forEach(highlight => {
+    console.log('Clearing all highlights');
+    
+    this.highlights.forEach((highlight, id) => {
       const parent = highlight.parentNode;
       if (parent) {
         while (highlight.firstChild) {
@@ -436,7 +688,7 @@ Example response:
     });
     this.highlights.clear();
 
-    this.styledElements.forEach((data) => {
+    this.styledElements.forEach((data, id) => {
       data.element.style.cssText = data.originalStyle;
       data.element.removeAttribute('title');
     });
@@ -447,6 +699,7 @@ Example response:
       el.removeAttribute('data-ai-id');
     });
 
+    // Vider la carte des couleurs et notifier le sidepanel
     this.highlightColors.clear();
     chrome.runtime.sendMessage({ type: 'CLEAR_LEGEND' }).catch(e => console.log("Sidepanel not open."));
     
@@ -495,4 +748,4 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
-console.log('AI Highlighter content script fully loaded and listening');
+console.log('Content script setup complete');
