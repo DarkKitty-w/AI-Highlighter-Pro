@@ -43,12 +43,15 @@ class SidePanel {
     
     // Load saved theme preference
     chrome.storage.local.get(['darkMode'], (result) => {
-      const isDarkMode = result.darkMode || window.matchMedia('(prefers-color-scheme: dark)').matches;
-      
-      if (isDarkMode) {
-        document.body.classList.add('dark-mode');
-        toggle.checked = true;
-        chrome.storage.local.set({ darkMode: true });
+      if (result.darkMode === undefined) {
+        // Detect system preference
+        const isSystemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        chrome.storage.local.set({ darkMode: isSystemDark });
+        document.body.classList.toggle('dark-mode', isSystemDark);
+        toggle.checked = isSystemDark;
+      } else {
+        document.body.classList.toggle('dark-mode', result.darkMode);
+        toggle.checked = result.darkMode;
       }
     });
 
@@ -158,7 +161,9 @@ class SidePanel {
     } else if (error.includes('Local AI not available')) {
       errorMessage += 'Chrome\'s built-in AI is not available. Using cloud API requires a valid API key.';
     } else if (error.includes('404') || error.includes('model')) {
-      errorMessage += 'API model error. The extension needs to be updated.';
+      errorMessage += 'API model configuration issue. The extension will try alternative models. Please try again.';
+    } else if (error.includes('All models failed')) {
+      errorMessage += 'All Gemini models failed. Please check your API key permissions or try again later.';
     } else {
       errorMessage += error;
     }
