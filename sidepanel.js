@@ -1,288 +1,288 @@
 class SidePanel {
   constructor() {
-    this.initializeEventListeners();
-    this.loadSavedSettings();
-    this.initializeColorLegend();
-    this.initializeDarkMode();
+    console.log('SidePanel constructor called');
+    try {
+      this.initializeEventListeners();
+      this.loadSavedSettings();
+      this.updateLegend(null);
+      this.initializeDarkMode();
+      console.log('SidePanel initialized successfully');
+    } catch (error) {
+      console.error('Error in SidePanel constructor:', error);
+    }
   }
 
   initializeEventListeners() {
-    // Analyze button
-    document.getElementById('analyzeBtn').addEventListener('click', () => {
-      this.handleAnalyze();
-    });
+    console.log('Initializing event listeners...');
+    
+    const analyzeBtn = document.getElementById('analyzeBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const queryInput = document.getElementById('query');
+    const darkModeToggle = document.getElementById('darkModeToggle');
 
-    // Clear button
-    document.getElementById('clearBtn').addEventListener('click', () => {
-      this.handleClear();
-    });
-
-    // Enter key in query field
-    document.getElementById('query').addEventListener('keypress', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
+    if (analyzeBtn) {
+      analyzeBtn.addEventListener('click', () => {
+        console.log('Analyze button clicked');
         this.handleAnalyze();
-      }
-    });
+      });
+    } else {
+      console.error('Analyze button not found');
+    }
 
-    // Listen for messages from content script
+    if (clearBtn) {
+      clearBtn.addEventListener('click', () => {
+        console.log('Clear button clicked');
+        this.handleClear();
+      });
+    } else {
+      console.error('Clear button not found');
+    }
+
+    if (queryInput) {
+      queryInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          this.handleAnalyze();
+        }
+      });
+    } else {
+      console.error('Query input not found');
+    }
+
+    if (darkModeToggle) {
+      darkModeToggle.addEventListener('change', () => {
+        const isDark = darkModeToggle.checked;
+        document.body.classList.toggle('dark-mode', isDark);
+        chrome.storage.local.set({ darkMode: isDark });
+      });
+    }
+
+    // Écouteur pour les messages
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+      console.log('Message received:', request.type);
       if (request.type === 'ANALYSIS_PROGRESS') {
         this.updateStatus(request.message, 'info');
       }
+      
+      if (request.type === 'UPDATE_LEGEND') {
+        this.updateLegend(request.payload);
+      }
+      
+      if (request.type === 'CLEAR_LEGEND') {
+        this.updateLegend(null);
+      }
     });
 
-    // Handle panel resize
     window.addEventListener('resize', () => {
       this.handleResize();
     });
+    
+    this.handleResize();
   }
 
   initializeDarkMode() {
     const toggle = document.getElementById('darkModeToggle');
     
-    // Load saved theme preference
     chrome.storage.local.get(['darkMode'], (result) => {
       if (result.darkMode === undefined) {
-        // Detect system preference
         const isSystemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
         chrome.storage.local.set({ darkMode: isSystemDark });
         document.body.classList.toggle('dark-mode', isSystemDark);
-        toggle.checked = isSystemDark;
+        if (toggle) toggle.checked = isSystemDark;
       } else {
         document.body.classList.toggle('dark-mode', result.darkMode);
-        toggle.checked = result.darkMode;
+        if (toggle) toggle.checked = result.darkMode;
       }
     });
-
-    // Toggle dark mode
-    toggle.addEventListener('change', (event) => {
-      if (event.target.checked) {
-        document.body.classList.add('dark-mode');
-        chrome.storage.local.set({ darkMode: true });
-      } else {
-        document.body.classList.remove('dark-mode');
-        chrome.storage.local.set({ darkMode: false });
-      }
-    });
-  }
-
-  handleResize() {
-    // Adjust layout based on current width
-    const width = document.body.clientWidth;
-    const colorLegend = document.getElementById('colorLegend');
-    
-    if (width < 400) {
-      colorLegend.style.gridTemplateColumns = '1fr';
-    } else if (width < 500) {
-      colorLegend.style.gridTemplateColumns = 'repeat(2, 1fr)';
-    } else {
-      colorLegend.style.gridTemplateColumns = 'repeat(3, 1fr)';
-    }
   }
 
   async handleAnalyze() {
-    const apiKey = document.getElementById('apiKey').value.trim();
-    const query = document.getElementById('query').value.trim();
+    console.log('handleAnalyze called');
+    const query = document.getElementById('query').value;
+    const apiKey = document.getElementById('apiKey').value;
 
-    // Validation
     if (!query) {
-      this.showError('Please enter what you want to analyze and highlight');
+      this.updateStatus('Please enter a query.', 'error');
+      return;
+    }
+    if (!apiKey) {
+      this.updateStatus('Please enter your Gemini API key.', 'error');
       return;
     }
 
-    // Save settings
     this.saveSettings(apiKey, query);
-
-    // Show loading state
-    this.setLoadingState(true);
-    this.updateStatus('Starting analysis...', 'info');
-    this.updateDetails({ aiMode: 'Processing...', highlightCount: 0, textLength: '--' });
+    this.setLoading(true);
+    this.updateStatus('Checking current page...', 'info');
 
     try {
-      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (!tabs[0] || !tabs[0].id) {
-        throw new Error('No active tab found');
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      
+      console.log('Current tab:', tab);
+      
+      if (!tab) {
+        throw new Error('No active tab found.');
       }
-
-      const response = await chrome.tabs.sendMessage(tabs[0].id, {
+      
+      if (!tab.id) {
+        throw new Error('Tab ID not available.');
+      }
+      
+      // VÉRIFICATION SIMPLIFIÉE - CORRECTION PRINCIPALE
+      if (!tab.url) {
+        throw new Error('Cannot analyze empty tab.');
+      }
+      
+      // Autoriser http, https, file, et autres protocoles non-Chrome
+      if (tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://') || 
+          tab.url.startsWith('edge://') || tab.url.startsWith('about:') || 
+          tab.url.startsWith('moz-extension://')) {
+        throw new Error('Cannot analyze browser internal pages. Please navigate to a regular website.');
+      }
+      
+      this.updateStatus('Sending request to content script...', 'info');
+      
+      // Test if content script is responsive
+      try {
+        const pingResponse = await chrome.tabs.sendMessage(tab.id, { action: 'ping' });
+        console.log('Content script ping response:', pingResponse);
+      } catch (pingError) {
+        console.log('Ping failed, but continuing anyway:', pingError);
+      }
+      
+      const response = await chrome.tabs.sendMessage(tab.id, {
         action: 'analyzeAndHighlight',
         query: query,
         apiKey: apiKey
       });
 
-      if (response) {
-        this.handleAnalysisResponse(response);
+      console.log('Response from content script:', response);
+
+      if (response && response.success) {
+        this.updateStatus(`Analysis complete! Found ${response.highlightCount} items.`, 'success');
+        this.updateStats(response.aiUsed, response.highlightCount, response.textLength);
       } else {
-        throw new Error('No response from content script. Please refresh the page and try again.');
+        throw new Error(response.error || 'Unknown error during analysis.');
       }
+
     } catch (error) {
-      this.handleError(error);
-    } finally {
-      this.setLoadingState(false);
-    }
-  }
-
-  handleAnalysisResponse(response) {
-    if (response.success) {
-      const aiModeDisplay = response.aiUsed === 'local' ? 'Chrome AI' : 'Cloud API';
-      this.showSuccess(
-        `Analysis complete! Found ${response.highlightCount} items using ${aiModeDisplay}. ` +
-        `Hover over highlighted text to see details.`
-      );
+      console.error('Error in handleAnalyze:', error);
       
-      this.updateDetails({
-        aiMode: aiModeDisplay,
-        highlightCount: response.highlightCount,
-        textLength: this.formatTextLength(response.textLength)
-      });
-    } else {
-      this.handleAnalysisError(response.error, response.details);
+      if (error.message.includes('Could not establish connection')) {
+        this.updateStatus('Error: Content script not loaded. Please refresh the page and try again.', 'error');
+      } else if (error.message.includes('Cannot analyze browser internal pages')) {
+        this.updateStatus('Error: ' + error.message, 'error');
+      } else if (error.message.includes('Cannot analyze empty tab')) {
+        this.updateStatus('Error: ' + error.message, 'error');
+      } else {
+        this.updateStatus(`Error: ${error.message}`, 'error');
+      }
+      
+      this.updateStats('--', 0, '--');
+    } finally {
+      this.setLoading(false);
     }
-  }
-
-  formatTextLength(length) {
-    if (length < 1000) return `${length} chars`;
-    return `${(length / 1000).toFixed(1)}k chars`;
-  }
-
-  handleAnalysisError(error, details = {}) {
-    let errorMessage = 'Analysis failed: ';
-    
-    // Specific error handling
-    if (error.includes('No text content') || error.includes('No sufficient text')) {
-      errorMessage += 'No readable text found on this page. Try a different website.';
-    } else if (error.includes('API key') || error.includes('401')) {
-      errorMessage += 'Invalid or missing Gemini API key. Please check your API key.';
-    } else if (error.includes('Network') || error.includes('fetch')) {
-      errorMessage += 'Network error. Check your internet connection.';
-    } else if (error.includes('quota') || error.includes('limit') || error.includes('429')) {
-      errorMessage += 'API quota exceeded. Try again later or check your API limits.';
-    } else if (error.includes('Local AI not available')) {
-      errorMessage += 'Chrome\'s built-in AI is not available. Using cloud API requires a valid API key.';
-    } else if (error.includes('404') || error.includes('model')) {
-      errorMessage += 'API model configuration issue. The extension will try alternative models. Please try again.';
-    } else if (error.includes('All models failed')) {
-      errorMessage += 'All Gemini models failed. Please check your API key permissions or try again later.';
-    } else {
-      errorMessage += error;
-    }
-
-    this.showError(errorMessage, details);
-  }
-
-  handleError(error) {
-    let errorMessage = 'Unexpected error: ';
-    
-    if (error.message.includes('Could not establish connection')) {
-      errorMessage += 'Extension not properly loaded on this page. Try refreshing the page.';
-    } else {
-      errorMessage += error.message;
-    }
-
-    this.showError(errorMessage);
   }
 
   async handleClear() {
+    console.log('handleClear called');
+    this.setLoading(true);
+    this.updateStatus('Clearing highlights...', 'info');
+    
+    this.updateLegend(null);
+    this.updateStats('--', 0, '--');
+
     try {
-      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (tabs[0] && tabs[0].id) {
-        await chrome.tabs.sendMessage(tabs[0].id, { action: 'clearHighlights' });
-        this.showSuccess('All highlights cleared');
-        this.updateDetails({
-          aiMode: '--',
-          highlightCount: 0,
-          textLength: '--'
-        });
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tab && tab.id) {
+        await chrome.tabs.sendMessage(tab.id, { action: 'clearHighlights' });
+        this.updateStatus('Highlights cleared.', 'info');
+      } else {
+        this.updateStatus('No valid page to clear.', 'info');
       }
     } catch (error) {
-      this.showError('Error clearing highlights: ' + error.message);
+      console.error('Error in handleClear:', error);
+      this.updateStatus('Ready.', 'info');
+    } finally {
+      this.setLoading(false);
     }
   }
 
-  showSuccess(message) {
-    this.updateStatus(message, 'success');
-  }
-
-  showError(message, details = null) {
-    this.updateStatus(message, 'error', details);
-  }
-
-  updateStatus(message, type = 'info', details = null) {
-    const statusElement = document.getElementById('statusMessage');
-    statusElement.textContent = message;
-    statusElement.className = `status-message status-${type}`;
-    
-    // Add error details if provided
-    if (details && type === 'error') {
-      let detailsText = JSON.stringify(details, null, 2);
-      if (typeof details === 'string') {
-        detailsText = details;
-      }
-      
-      let detailsElement = statusElement.querySelector('.error-details');
-      if (!detailsElement) {
-        detailsElement = document.createElement('div');
-        detailsElement.className = 'error-details';
-        statusElement.appendChild(detailsElement);
-      }
-      detailsElement.textContent = detailsText;
-    } else {
-      const detailsElement = statusElement.querySelector('.error-details');
-      if (detailsElement) {
-        detailsElement.remove();
-      }
-    }
-  }
-
-  setLoadingState(loading) {
+  setLoading(isLoading) {
     const analyzeBtn = document.getElementById('analyzeBtn');
     const clearBtn = document.getElementById('clearBtn');
     
-    if (loading) {
-      analyzeBtn.classList.add('loading');
-      clearBtn.classList.add('loading');
-      analyzeBtn.textContent = 'Analyzing...';
+    if (analyzeBtn) {
+      analyzeBtn.disabled = isLoading;
+      analyzeBtn.textContent = isLoading ? 'Analyzing...' : 'Analyze & Highlight';
+    }
+    
+    if (clearBtn) clearBtn.disabled = isLoading;
+    
+    if (isLoading) {
+      document.body.classList.add('loading');
     } else {
-      analyzeBtn.classList.remove('loading');
-      clearBtn.classList.remove('loading');
-      analyzeBtn.textContent = 'Analyze & Highlight';
+      document.body.classList.remove('loading');
     }
   }
 
-  updateDetails({ aiMode, highlightCount, textLength }) {
-    document.getElementById('aiModeValue').textContent = aiMode;
-    document.getElementById('highlightCountValue').textContent = highlightCount;
-    if (textLength) {
-      document.getElementById('textLengthValue').textContent = textLength;
+  updateStatus(message, type = 'info') {
+    const statusElement = document.getElementById('statusMessage');
+    if (statusElement) {
+      statusElement.textContent = message;
+      statusElement.className = `status-message status-${type}`;
     }
   }
 
-  initializeColorLegend() {
-    const colors = {
-      goal: { color: '#FFA500', label: 'Goals & Objectives' },
-      definition: { color: '#90EE90', label: 'Definitions' },
-      keypoint: { color: '#87CEEB', label: 'Key Points' },
-      risk: { color: '#FFB6C1', label: 'Risks & Challenges' },
-      date: { color: '#DDA0DD', label: 'Dates & Timelines' },
-      default: { color: '#FFFF00', label: 'Other' }
-    };
+  updateStats(aiMode, highlightCount, textLength) {
+    const aiModeElement = document.getElementById('aiModeValue');
+    const highlightCountElement = document.getElementById('highlightCountValue');
+    const textLengthElement = document.getElementById('textLengthValue');
+    
+    if (aiModeElement) aiModeElement.textContent = aiMode;
+    if (highlightCountElement) highlightCountElement.textContent = highlightCount;
+    if (textLengthElement) {
+      textLengthElement.textContent = textLength > 1000 ? 
+        `${(textLength / 1000).toFixed(1)}k` : textLength;
+    }
+  }
 
+  handleResize() {
+    const panel = document.body;
+    if (panel) {
+      const isCompact = panel.clientWidth < 320;
+      panel.classList.toggle('compact', isCompact);
+    }
+  }
+
+  updateLegend(colorsMap) {
     const legendElement = document.getElementById('colorLegend');
+    if (!legendElement) return;
+    
     legendElement.innerHTML = '';
 
-    Object.entries(colors).forEach(([key, config]) => {
+    if (!colorsMap || Object.keys(colorsMap).length === 0) {
+      // Afficher un message quand il n'y a pas de légende
+      const emptyMessage = document.createElement('div');
+      emptyMessage.className = 'color-item';
+      emptyMessage.textContent = 'No highlights yet';
+      emptyMessage.style.opacity = '0.6';
+      emptyMessage.style.fontStyle = 'italic';
+      legendElement.appendChild(emptyMessage);
+      return;
+    }
+
+    Object.entries(colorsMap).forEach(([category, color]) => {
       const colorItem = document.createElement('div');
       colorItem.className = 'color-item';
+      
+      const label = category.charAt(0).toUpperCase() + category.slice(1);
+      
       colorItem.innerHTML = `
-        <div class="color-swatch" style="background-color: ${config.color}"></div>
-        <span>${config.label}</span>
+        <div class="color-swatch" style="background-color: ${color}"></div>
+        <span>${label}</span>
       `;
       legendElement.appendChild(colorItem);
     });
-
-    // Initial resize handling
-    this.handleResize();
   }
 
   loadSavedSettings() {
@@ -297,14 +297,25 @@ class SidePanel {
   }
 
   saveSettings(apiKey, query) {
-    chrome.storage.local.set({ 
+    chrome.storage.local.set({
       geminiApiKey: apiKey,
-      lastQuery: query 
+      lastQuery: query
     });
   }
 }
 
-// Initialize side panel when DOM is loaded
-document.addEventListener('DOMContentLoaded', () => {
-  new SidePanel();
+// Initialisation avec gestion d'erreur
+console.log('Starting SidePanel initialization...');
+document.addEventListener('DOMContentLoaded', function() {
+  try {
+    new SidePanel();
+    console.log('SidePanel fully initialized');
+  } catch (error) {
+    console.error('Failed to initialize SidePanel:', error);
+    const statusElement = document.getElementById('statusMessage');
+    if (statusElement) {
+      statusElement.textContent = 'Error initializing extension. Please refresh.';
+      statusElement.className = 'status-message status-error';
+    }
+  }
 });
