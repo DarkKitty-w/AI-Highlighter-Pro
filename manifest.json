@@ -9,6 +9,9 @@
     "sidePanel",
     "scripting"
   ],
+  "icons": {
+    "128": "icons/icon128.png"
+  },
   "host_permissions": [
     "https://generativelanguage.googleapis.com/*",
     "http://*/*",
