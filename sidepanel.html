@@ -427,6 +427,65 @@
     .dark-mode .stat-item {
       background: var(--input-bg);
     }
+
+    .loading {
+      opacity: 0.7;
+      pointer-events: none;
+      position: relative;
+    }
+
+    .loading::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(255, 255, 255, 0.5);
+      z-index: 1000;
+    }
+
+    .dark-mode .loading::after {
+      background: rgba(0, 0, 0, 0.5);
+    }
+
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none !important;
+    }
+
+    .btn:disabled:hover {
+      transform: none !important;
+    }
+
+/* Assurer que les classes de statut sont correctes */
+    .status-info {
+      background: #cce7ff;
+      color: #004085;
+      border-left-color: var(--primary-color);
+      display: block;
+    }
+
+    .dark-mode .status-info {
+      background: #084298;
+      color: #cce7ff;
+    }
+
+    .compact .input-section,
+    .compact .details-section {
+      padding: 10px;
+    }
+
+    .compact .btn {
+      padding: 10px;
+      font-size: 12px;
+    }
+
+    .compact .header {
+      flex-direction: column;
+      align-items: flex-start;
+    }
   </style>
 </head>
 <body>
