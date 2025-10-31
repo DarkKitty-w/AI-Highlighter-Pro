@@ -10,7 +10,10 @@
     "scripting"
   ],
   "host_permissions": [
-    "https://generativelanguage.googleapis.com/*"
+    "https://generativelanguage.googleapis.com/*",
+    "http://*/*",
+    "https://*/*",
+    "file://*/*"
   ],
   "action": {
     "default_title": "Open AI Highlighter Panel"
@@ -22,7 +25,8 @@
     {
       "matches": [
         "http://*/*",
-        "https://*/*"
+        "https://*/*",
+        "file://*/*"
       ],
       "js": ["content.js"],
       "css": ["styles.css"]
