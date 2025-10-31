@@ -93,9 +93,15 @@ class AIHighlighter {
     const prompt = this.buildPrompt(query, text);
     
     try {
-      // FIXED: Updated model from gemini-pro to gemini-1.5-flash
+      // FIXED: Use the correct model name - gemini-2.0-flash or gemini-1.5-flash
+      const model = "gemini-1.5-flash"; // Try this first
+      // Alternative models you can try:
+      // "gemini-2.0-flash-exp" 
+      // "gemini-1.5-pro"
+      // "gemini-1.0-pro"
+      
       const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+        `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${apiKey}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -115,12 +121,42 @@ class AIHighlighter {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        if (response.status === 401) {
+        
+        // If 404, try alternative models
+        if (response.status === 404) {
+          // Try alternative models
+          const alternativeModels = ["gemini-2.0-flash-exp", "gemini-1.5-pro", "gemini-1.0-pro"];
+          for (const altModel of alternativeModels) {
+            try {
+              const altResponse = await fetch(
+                `https://generativelanguage.googleapis.com/v1/models/${altModel}:generateContent?key=${apiKey}`,
+                {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    contents: [{
+                      parts: [{ text: prompt }]
+                    }]
+                  })
+                }
+              );
+              
+              if (altResponse.ok) {
+                const altData = await altResponse.json();
+                if (altData.candidates?.[0]?.content?.parts?.[0]?.text) {
+                  const responseText = altData.candidates[0].content.parts[0].text;
+                  return this.parseAIResponse(responseText);
+                }
+              }
+            } catch (altError) {
+              continue; // Try next model
+            }
+          }
+          throw new Error(`All models failed. Available models: gemini-1.5-flash, gemini-2.0-flash-exp, gemini-1.5-pro, gemini-1.0-pro`);
+        } else if (response.status === 401) {
           throw new Error('Invalid API key. Please check your Gemini API key.');
         } else if (response.status === 429) {
           throw new Error('API quota exceeded. Please try again later.');
-        } else if (response.status === 404) {
-          throw new Error('API model not found. Please check the model configuration.');
         } else {
           throw new Error(`API error: ${response.status} - ${errorData.error?.message || response.statusText}`);
         }
