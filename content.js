@@ -93,15 +93,22 @@ class AIHighlighter {
     const prompt = this.buildPrompt(query, text);
     
     try {
+      // FIXED: Updated model from gemini-pro to gemini-1.5-flash
       const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key=${apiKey}`,
+        `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             contents: [{
               parts: [{ text: prompt }]
-            }]
+            }],
+            generationConfig: {
+              temperature: 0.1,
+              topK: 32,
+              topP: 0.95,
+              maxOutputTokens: 2048,
+            }
           })
         }
       );
@@ -112,6 +119,8 @@ class AIHighlighter {
           throw new Error('Invalid API key. Please check your Gemini API key.');
         } else if (response.status === 429) {
           throw new Error('API quota exceeded. Please try again later.');
+        } else if (response.status === 404) {
+          throw new Error('API model not found. Please check the model configuration.');
         } else {
           throw new Error(`API error: ${response.status} - ${errorData.error?.message || response.statusText}`);
         }
@@ -139,19 +148,19 @@ class AIHighlighter {
     const clone = document.cloneNode(true);
     
     // Remove unwanted elements
-    clone.querySelectorAll('script, style, nav, footer, header, iframe, noscript').forEach(el => el.remove());
+    clone.querySelectorAll('script, style, nav, footer, header, iframe, noscript, .ads, .advertisement').forEach(el => el.remove());
     
     // Get text content
     const text = clone.body?.innerText || '';
     
-    // Clean up text
+    // Clean up text - remove extra whitespace and limit length
     return text
       .replace(/\s+/g, ' ')
+      .replace(/\n+/g, ' ')
       .trim()
       .substring(0, 15000); // Limit for API constraints
   }
 
-  // ... (rest of the methods from previous implementation remain the same)
   buildPrompt(query, text) {
     return `Analyze the following text and identify different categories mentioned in the query: "${query}"
 
@@ -160,25 +169,40 @@ ${text}
 
 Return ONLY a JSON array where each object has:
 - "text": exact text snippet (2-15 words)
-- "category": one of: goal, definition, keypoint, risk, date, or other relevant category
-- "reason": brief explanation
+- "category": one of: goal, definition, keypoint, risk, date, or other relevant category based on the query
+- "reason": brief explanation why this text matches the category
 
-IMPORTANT: Return ONLY valid JSON, no other text.
+IMPORTANT: 
+- Return ONLY valid JSON, no other text
+- Use exact text snippets from the provided content
+- Categories should match the user's query intent
 
-Example:
+Example response for query "goals and definitions":
 [
-  {"text": "complete project by Q4", "category": "goal", "reason": "mentions timeline"},
-  {"text": "machine learning algorithm", "category": "definition", "reason": "defines technical concept"}
+  {"text": "complete project by Q4 2024", "category": "goal", "reason": "mentions project completion timeline"},
+  {"text": "machine learning algorithm", "category": "definition", "reason": "defines a technical concept"}
 ]`;
   }
 
   parseAIResponse(response) {
     try {
-      const jsonMatch = response.match(/\[[\s\S]*\]/);
+      // Clean the response and extract JSON
+      const cleanedResponse = response.replace(/```json\n?|\n?```/g, '').trim();
+      const jsonMatch = cleanedResponse.match(/\[[\s\S]*\]/);
+      
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]);
-        if (Array.isArray(parsed)) {
-          return { categories: parsed };
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // Validate each item has required fields
+          const validItems = parsed.filter(item => 
+            item.text && item.category && item.reason &&
+            typeof item.text === 'string' &&
+            item.text.length >= 2 && item.text.length <= 200
+          );
+          
+          if (validItems.length > 0) {
+            return { categories: validItems };
+          }
         }
       }
       throw new Error('Invalid JSON response from AI');
@@ -201,21 +225,37 @@ Example:
     if (!text || text.length < 2) return;
     
     try {
-      const regex = new RegExp(this.escapeRegExp(text), 'gi');
+      // Escape text for regex and handle special characters
+      const escapedText = this.escapeRegExp(text);
+      const regex = new RegExp(escapedText, 'gi');
       const walker = document.createTreeWalker(
         document.body,
         NodeFilter.SHOW_TEXT,
-        null,
+        {
+          acceptNode: function(node) {
+            // Skip text nodes in script, style, and hidden elements
+            if (node.parentNode.nodeName === 'SCRIPT' || 
+                node.parentNode.nodeName === 'STYLE' ||
+                node.parentNode.style?.display === 'none' ||
+                node.parentNode.style?.visibility === 'hidden') {
+              return NodeFilter.FILTER_REJECT;
+            }
+            return NodeFilter.FILTER_ACCEPT;
+          }
+        },
         false
       );
 
+      let found = false;
       let node;
       while (node = walker.nextNode()) {
-        if (node.textContent.match(regex) && node.parentNode.nodeName !== 'SCRIPT') {
+        if (node.textContent.match(regex)) {
           const span = document.createElement('span');
           span.className = 'ai-highlight';
           span.style.backgroundColor = color;
           span.style.cursor = 'help';
+          span.style.borderRadius = '2px';
+          span.style.padding = '1px 2px';
           span.setAttribute('data-category', category);
           span.setAttribute('data-highlight-id', id);
           span.setAttribute('title', `${category}: ${reason}`);
@@ -226,10 +266,15 @@ Example:
           newNode.parentNode.replaceChild(span, newNode);
           
           this.highlights.set(id, span);
+          found = true;
         }
       }
+
+      if (!found) {
+        console.warn('Text not found for highlighting:', text.substring(0, 50));
+      }
     } catch (error) {
-      console.warn('Failed to highlight text:', text, error);
+      console.warn('Failed to highlight text:', text.substring(0, 50), error);
     }
   }
 
