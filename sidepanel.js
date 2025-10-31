@@ -3,6 +3,7 @@ class SidePanel {
     this.initializeEventListeners();
     this.loadSavedSettings();
     this.initializeColorLegend();
+    this.initializeDarkMode();
   }
 
   initializeEventListeners() {
@@ -30,6 +31,51 @@ class SidePanel {
         this.updateStatus(request.message, 'info');
       }
     });
+
+    // Handle panel resize
+    window.addEventListener('resize', () => {
+      this.handleResize();
+    });
+  }
+
+  initializeDarkMode() {
+    const toggle = document.getElementById('darkModeToggle');
+    
+    // Load saved theme preference
+    chrome.storage.local.get(['darkMode'], (result) => {
+      const isDarkMode = result.darkMode || window.matchMedia('(prefers-color-scheme: dark)').matches;
+      
+      if (isDarkMode) {
+        document.body.classList.add('dark-mode');
+        toggle.checked = true;
+        chrome.storage.local.set({ darkMode: true });
+      }
+    });
+
+    // Toggle dark mode
+    toggle.addEventListener('change', (event) => {
+      if (event.target.checked) {
+        document.body.classList.add('dark-mode');
+        chrome.storage.local.set({ darkMode: true });
+      } else {
+        document.body.classList.remove('dark-mode');
+        chrome.storage.local.set({ darkMode: false });
+      }
+    });
+  }
+
+  handleResize() {
+    // Adjust layout based on current width
+    const width = document.body.clientWidth;
+    const colorLegend = document.getElementById('colorLegend');
+    
+    if (width < 400) {
+      colorLegend.style.gridTemplateColumns = '1fr';
+    } else if (width < 500) {
+      colorLegend.style.gridTemplateColumns = 'repeat(2, 1fr)';
+    } else {
+      colorLegend.style.gridTemplateColumns = 'repeat(3, 1fr)';
+    }
   }
 
   async handleAnalyze() {
@@ -48,6 +94,7 @@ class SidePanel {
     // Show loading state
     this.setLoadingState(true);
     this.updateStatus('Starting analysis...', 'info');
+    this.updateDetails({ aiMode: 'Processing...', highlightCount: 0, textLength: '--' });
 
     try {
       const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -75,35 +122,43 @@ class SidePanel {
 
   handleAnalysisResponse(response) {
     if (response.success) {
+      const aiModeDisplay = response.aiUsed === 'local' ? 'Chrome AI' : 'Cloud API';
       this.showSuccess(
-        `Analysis complete! Found ${response.highlightCount} items using ${response.aiUsed} AI. ` +
+        `Analysis complete! Found ${response.highlightCount} items using ${aiModeDisplay}. ` +
         `Hover over highlighted text to see details.`
       );
       
       this.updateDetails({
-        aiMode: response.aiUsed,
+        aiMode: aiModeDisplay,
         highlightCount: response.highlightCount,
-        textLength: response.textLength
+        textLength: this.formatTextLength(response.textLength)
       });
     } else {
       this.handleAnalysisError(response.error, response.details);
     }
   }
 
+  formatTextLength(length) {
+    if (length < 1000) return `${length} chars`;
+    return `${(length / 1000).toFixed(1)}k chars`;
+  }
+
   handleAnalysisError(error, details = {}) {
     let errorMessage = 'Analysis failed: ';
     
     // Specific error handling
-    if (error.includes('No text content')) {
+    if (error.includes('No text content') || error.includes('No sufficient text')) {
       errorMessage += 'No readable text found on this page. Try a different website.';
-    } else if (error.includes('API key')) {
+    } else if (error.includes('API key') || error.includes('401')) {
       errorMessage += 'Invalid or missing Gemini API key. Please check your API key.';
     } else if (error.includes('Network') || error.includes('fetch')) {
       errorMessage += 'Network error. Check your internet connection.';
-    } else if (error.includes('quota') || error.includes('limit')) {
+    } else if (error.includes('quota') || error.includes('limit') || error.includes('429')) {
       errorMessage += 'API quota exceeded. Try again later or check your API limits.';
     } else if (error.includes('Local AI not available')) {
       errorMessage += 'Chrome\'s built-in AI is not available. Using cloud API requires a valid API key.';
+    } else if (error.includes('404') || error.includes('model')) {
+      errorMessage += 'API model error. The extension needs to be updated.';
     } else {
       errorMessage += error;
     }
@@ -130,7 +185,7 @@ class SidePanel {
         await chrome.tabs.sendMessage(tabs[0].id, { action: 'clearHighlights' });
         this.showSuccess('All highlights cleared');
         this.updateDetails({
-          aiMode: 'Not started',
+          aiMode: '--',
           highlightCount: 0,
           textLength: '--'
         });
@@ -191,10 +246,10 @@ class SidePanel {
   }
 
   updateDetails({ aiMode, highlightCount, textLength }) {
-    document.getElementById('aiMode').textContent = `AI Mode: ${aiMode}`;
-    document.getElementById('highlightCount').textContent = `Highlights: ${highlightCount}`;
+    document.getElementById('aiModeValue').textContent = aiMode;
+    document.getElementById('highlightCountValue').textContent = highlightCount;
     if (textLength) {
-      document.getElementById('textLength').textContent = `Page text: ${textLength} characters`;
+      document.getElementById('textLengthValue').textContent = textLength;
     }
   }
 
@@ -220,6 +275,9 @@ class SidePanel {
       `;
       legendElement.appendChild(colorItem);
     });
+
+    // Initial resize handling
+    this.handleResize();
   }
 
   loadSavedSettings() {
