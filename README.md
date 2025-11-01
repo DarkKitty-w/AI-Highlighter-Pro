@@ -1,99 +1,301 @@
-AI Highlighter Pro ✨
-AI Highlighter Pro est une extension Chrome qui transforme votre navigateur en un assistant de recherche intelligent. Au lieu de lire manuellement de longs articles, vous pouvez simplement demander à l'IA ce que vous cherchez (par exemple, "toutes les définitions" ou "les risques et les dates clés"), et l'extension lira, trouvera et surlignera toutes les correspondances directement sur la page.
+🎯 AI Highlighter Pro - Chrome Extension
 
-## 🚀 Fonctionnalités
+<div align="center">https://img.shields.io/badge/Chrome_AI_Challenge-2025-blue?style=for-the-badge&logo=google-chrome&logoColor=white
+https://img.shields.io/badge/version-1.0.0-green?style=for-the-badge
+https://img.shields.io/badge/license-MIT-blue?style=for-the-badge
 
-Analyse par l'IA : Propulsé par l'API Google Gemini (gemini-1.5-flash-latest) pour une compréhension de texte de nouvelle génération.
+Intelligent Text Analysis & Highlighting with Hybrid AI Technology
 
-Requêtes en langage naturel : Demandez simplement ce que vous voulez : "tous les risques", "les définitions et les formules", "les objectifs du projet".
+Features • Installation • Usage • API Setup • Demo
 
-Surlignage Dynamique : Surligne intelligemment tous les concepts correspondants directement sur la page.
+</div>🌟 Overview
 
-Couleurs Aléatoires : Génère une couleur pastel unique et aléatoire pour chaque catégorie trouvée, rendant l'analyse visuellement claire.
+AI Highlighter Pro is a cutting-edge Chrome extension designed for the Google Chrome Built-in AI Challenge 2025 that leverages hybrid AI technology to intelligently analyze and highlight text on web pages. It seamlessly combines Chrome's built-in Gemini Nano AI with cloud-based Gemini API fallback to provide powerful text analysis capabilities.
 
-Légende Dynamique : Le panneau latéral se met à jour automatiquement avec une légende de couleurs correspondant à ce qui a été trouvé.
+🏆 Built for Chrome AI Challenge 2025
 
-Analyse de Page Complète : Lit l'intégralité des pages, même les plus longues (comme Wikipédia), en les découpant intelligemment en "chunks" qui se chevauchent.
+· Best Hybrid AI Application category
+· Leverages Chrome's experimental AI APIs
+· Seamless local + cloud AI integration
 
-Gestion du HTML Complexe : Surligne le texte de manière fiable, même s'il est séparé par d'autres balises HTML comme <b>, <br>, ou des liens.
+https://via.placeholder.com/800x400/4285f4/ffffff?text=AI+Highlighter+Pro+Demo
 
-Support LaTeX / KaTeX : Une fonctionnalité unique qui identifie les blocs de formules mathématiques (LaTeX/KaTeX) et les surligne en tant que blocs complets, ce que les surligneurs de texte standard ne peuvent pas faire.
+✨ Features
 
-Panneau Latéral Moderne : Une interface utilisateur propre et réactive construite avec l'API Side Panel de Chrome.
+🤖 Hybrid AI Architecture
 
-Mode Sombre : L'interface s'adapte à votre thème système (clair ou sombre).
+· Local AI First: Uses Chrome's built-in Gemini Nano when available
+· Cloud Fallback: Automatically switches to Gemini API when local AI is unavailable
+· Smart Model Selection: Tries multiple Gemini models for maximum compatibility
 
-Stockage Sécurisé : Mémorise votre clé API et votre dernière requête en toute sécurité dans le chrome.storage.local.
+🎨 Intelligent Highlighting
 
-🛠️ Comment ça marche (La technique)
-Ce n'est pas un simple "Ctrl+F". L'extension utilise un pipeline en plusieurs étapes pour garantir la précision :
+· Color-Coded Categories: Different colors for goals, definitions, key points, risks, and dates
+· Hover Tooltips: See category explanations by hovering over highlighted text
+· Context-Aware Analysis: AI understands your query context and finds relevant content
 
-1. Cartographie de la Page : Le script content.js ne se contente pas de prendre le texte brut. Il parcourt le DOM et "tagge" chaque élément textuel pertinent (<p>, <li>, <dd>, et même les blocs .katex) avec un ID unique (ex: data-ai-id="chunk-123").
+🎯 User Experience
 
-2. Création de la "Carte" : Il génère ensuite un long fichier texte pour l'IA, composé de ces morceaux de texte et de leurs ID (ex: [ID:chunk-123]Ceci est le texte du paragraphe.[FIN ID]).
+· Responsive Side Panel: Adapts to different screen sizes
+· Dark/Light Mode: Automatic theme switching with manual override
+· Real-time Feedback: Progress indicators and detailed status updates
+· One-Click Clearing: Remove all highlights instantly
 
-3. Découpage (Chunking) : Cette "carte" est divisée en morceaux de 15 000 caractères avec un chevauchement de 20% pour garantir qu'aucune définition n'est coupée entre deux chunks.
+🔧 Advanced Capabilities
 
-4. Appels API Parallèles : Tous les chunks sont envoyés simultanément à l'API Gemini (Promise.all), ce qui rend l'analyse très rapide.
+· Multi-language Support: Works across different languages and websites
+· Smart Text Extraction: Filters out irrelevant content (ads, scripts, navigation)
+· Error Resilience: Comprehensive error handling with helpful messages
+· Privacy Focused: Your API key stays local, no data sent to third parties
 
-5. Surlignage Ciblé : L'IA est instruite de renvoyer non seulement le texte, mais aussi le passage_id (ex: "chunk-123") où elle l'a trouvé. Le script de surlignage n'a plus besoin de "chercher" le texte sur toute la page ; il va directement à l'élément [data-ai-id="chunk-123"] et surligne le texte à l'intérieur de celui-ci.
+🚀 Installation
 
-6. Surlignage Robuste : La fonction de surlignage utilise une expression régulière (RegExp) complexe qui trouve le texte de l'IA même si son innerHTML est fragmenté par des balises <br>, <b> ou des sauts de ligne \n.
+Method 1: Chrome Web Store (Coming Soon)
 
-⚙️ Construit avec
-Langages : JavaScript (ES6+), HTML5, CSS3
+```bash
+# Will be available on Chrome Web Store after review
+```
 
-API & Technologies :
+Method 2: Manual Installation
 
-Google Gemini API (gemini-1.5-flash-latest)
+1. Download the Extension
+   ```bash
+   git clone https://github.com/your-username/ai-highlighter-pro.git
+   ```
+2. Load in Chrome
+   · Open Chrome and navigate to chrome://extensions/
+   · Enable "Developer mode" (toggle in top-right)
+   · Click "Load unpacked"
+   · Select the extension folder
+3. Verify Installation
+   · Look for the AI Highlighter icon in your toolbar
+   · Click the icon to open the side panel
 
-Chrome Extension API (Manifest V3)
+🔑 API Setup
 
-Chrome Side Panel API
+Getting Your Free API Key
 
-Chrome Storage API
+1. Visit Google AI Studio
+2. Sign in with your Google account
+3. Click "Create API Key" in the left sidebar
+4. Copy your generated API key
 
-🚀 Démarrage
-Prérequis
-Vous avez besoin d'une clé API Google Gemini. Vous pouvez en obtenir une gratuitement sur Google AI Studio.
+Configuring the Extension
 
-Installation
-Téléchargez ce projet (ou clonez-le via Git).
+1. Open the AI Highlighter side panel
+2. Paste your API key in the "Gemini API Key" field
+3. The key is saved automatically for future use
 
-Ouvrez Google Chrome et allez à l'adresse chrome://extensions.
+🔒 Privacy Note: Your API key is stored locally in Chrome's storage and never sent to any server except Google's official Gemini API.
 
-Activez le "Mode développeur" en haut à droite.
+📖 Usage
 
-Cliquez sur "Charger l'extension non empaquetée".
+Basic Text Analysis
 
-Sélectionnez le dossier où vous avez téléchargé (et dézippé) ce projet.
+1. Navigate to any webpage with text content
+2. Open the AI Highlighter side panel
+3. Enter what you want to analyze:
+   ```
+   goals, definitions, key points, risks, dates
+   ```
+4. Click "Analyze & Highlight"
 
-L'extension "AI Highlighter Pro" devrait maintenant apparaître dans votre barre d'outils.
+Advanced Queries
 
-📖 Utilisation
-Rendez-vous sur n'importe quelle page web que vous souhaitez analyser (ex: Wikipédia).
+The AI understands natural language. Try these examples:
 
-Cliquez sur l'icône de l'extension dans votre barre d'outils pour ouvrir le panneau latéral.
+Query Type Example Best For
+Academic theories, hypotheses, conclusions Research papers
+Business objectives, metrics, timelines Reports & docs
+Technical algorithms, parameters, results Documentation
+Creative character traits, plot points, themes Literature
 
-Collez votre clé API Gemini dans le premier champ.
+Color Legend
 
-Dans le champ "What to analyze...", tapez ce que vous recherchez.
+· 🟠 Orange: Goals & Objectives
+· 🟢 Green: Definitions & Concepts
+· 🔵 Blue: Key Points & Main Ideas
+· 🎀 Pink: Risks & Challenges
+· 🟣 Purple: Dates & Timelines
+· 🟡 Yellow: Other Categories
 
-Exemples :
+🛠️ Troubleshooting
 
-Toutes les définitions
+Common Issues & Solutions
 
-Les points clés et les risques
+🔴 API Errors
 
-Les dates et les objectifs du projet
+Problem: "API model not found" or "Invalid API key"
+Solution:
 
-formules et concepts principaux
+```javascript
+// The extension automatically tries these models:
+1. gemini-1.5-flash  ✅ Recommended
+2. gemini-2.0-flash-exp
+3. gemini-1.5-pro
+4. gemini-1.0-pro
+```
 
-Cliquez sur "Analyze & Highlight".
+Steps:
 
-Attendez quelques secondes. La page se remplira de surlignages colorés, et la légende dans le panneau latéral se mettra à jour.
+1. Verify your API key at Google AI Studio
+2. Ensure you have quota available
+3. Check your internet connection
 
-Cliquez sur "Clear All" pour tout effacer.
+🔴 No Highlights Appear
 
-📄 Licence
-Ce projet est sous licence MIT. Voir le fichier LICENSE.md pour plus de détails.
+Possible Causes:
+
+· Page has limited text content
+· Text is inside complex JavaScript elements
+· AI didn't find matching content for your query
+
+Solutions:
+
+· Try a different, more specific query
+· Refresh the page and try again
+· Check if the page has sufficient text content
+
+🔴 Extension Not Loading
+
+Solutions:
+
+1. Reload the extension in chrome://extensions/
+2. Restart Chrome
+3. Check for conflicting extensions
+
+Error Messages Reference
+
+Error Message Cause Solution
+Local AI not available Chrome AI APIs not enabled Use cloud API with valid key
+No sufficient text content Page has little readable text Try a different webpage
+API quota exceeded Reached API usage limits Wait or check quota in AI Studio
+Network error Internet connection issue Check connection and retry
+
+🏗️ Technical Architecture
+
+File Structure
+
+```
+ai-highlighter-pro/
+├── manifest.json          # Extension configuration
+├── sidepanel.html         # Main UI interface
+├── sidepanel.js           # Panel logic & user interactions
+├── content.js            # Content script for page analysis
+├── background.js         # Service worker & background tasks
+├── styles.css            # Highlight styles & animations
+└── README.md            # This file
+```
+
+AI Integration Flow
+
+```mermaid
+graph TD
+    A[User Query] --> B{Local AI Available?}
+    B -->|Yes| C[Use Gemini Nano]
+    B -->|No| D[Use Gemini API]
+    C --> E[Analyze Text]
+    D --> E
+    E --> F[Parse JSON Response]
+    F --> G[Apply Highlights]
+    G --> H[Display Results]
+```
+
+Key Technologies
+
+· Chrome Extensions API (Manifest V3)
+· Gemini Nano (Local AI via window.ai)
+· Gemini API (Cloud AI fallback)
+· CSS Variables (Theme management)
+· Modern JavaScript (ES6+, Async/Await)
+
+🎨 Customization
+
+Adding New Categories
+
+Edit the highlightColors object in content.js:
+
+```javascript
+this.highlightColors = {
+  goal: '#FFA500',
+  definition: '#90EE90',
+  keypoint: '#87CEEB',
+  risk: '#FFB6C1',
+  date: '#DDA0DD',
+  // Add your custom categories:
+  quote: '#FFD700',
+  statistic: '#00CED1',
+  custom_category: '#YOUR_COLOR'
+};
+```
+
+Theme Customization
+
+Modify CSS variables in sidepanel.html:
+
+```css
+:root {
+  --primary-color: #4285f4;
+  --bg-color: #f8f9fa;
+  --text-color: #202124;
+  /* Add your custom colors */
+}
+```
+
+🤝 Contributing
+
+We welcome contributions! Here's how you can help:
+
+1. Report Bugs: Open an issue with detailed description
+2. Suggest Features: Share your ideas for improvement
+3. Code Contributions: Submit pull requests
+4. Documentation: Help improve this README or add tutorials
+
+Development Setup
+
+```bash
+# Clone the repository
+git clone https://github.com/your-username/ai-highlighter-pro.git
+
+# Make your changes
+# Test in Chrome via chrome://extensions/
+
+# Submit a pull request
+```
+
+📄 License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+🙏 Acknowledgments
+
+· Google Chrome Team for the AI Challenge opportunity
+· Gemini AI for powerful language models
+· Chrome Extensions Community for documentation and examples
+
+🔮 Roadmap
+
+Upcoming Features
+
+· Batch Processing: Analyze multiple pages at once
+· Custom Categories: User-defined highlight types
+· Export Highlights: Save analysis to PDF/Markdown
+· Team Collaboration: Share highlighted pages
+· Advanced Filters: Fine-tune AI analysis parameters
+· Keyboard Shortcuts: Quick access to common actions
+
+Known Limitations
+
+· Limited to ~15,000 characters per analysis (API constraints)
+· Requires manual API key setup for cloud features
+· Some websites with heavy JavaScript may not work optimally
+
+---
+
+<div align="center">Built with ❤️ for the Chrome AI Challenge 2025
+
+Report Bug •
+Request Feature •
+⭐ Star on GitHub
+
+</div>
