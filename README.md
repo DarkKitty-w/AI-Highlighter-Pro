@@ -68,6 +68,7 @@ AI Highlighter Pro is a cutting-edge Chrome extension designed for the Google Ch
 
 ```bash
 # Will be available on Chrome Web Store after review
+bash```
 
 Method 2: Manual Installation
  * Download the Extension
