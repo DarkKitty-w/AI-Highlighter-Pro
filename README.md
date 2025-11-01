@@ -111,12 +111,7 @@ The AI understands natural language. Try these examples:
 | Technical | algorithms, parameters, results | Documentation |
 | Creative | character traits, plot points, themes | Literature |
 Color Legend
- * 🟠 Orange: Goals & Objectives
- * 🟢 Green: Definitions & Concepts
- * 🔵 Blue: Key Points & Main Ideas
- * 🎀 Pink: Risks & Challenges
- * 🟣 Purple: Dates & Timelines
- * 🟡 Yellow: Other Categories
+ autamatycally assighed by the AI
 🛠️ Troubleshooting
 Common Issues & Solutions
 🔴 API Errors
@@ -127,6 +122,7 @@ Common Issues & Solutions
 2. gemini-2.0-flash-exp
 3. gemini-1.5-pro
 4. gemini-1.0-pro
+5. gemini-2.5-flash (default)
 
    Steps:
    * Verify your API key at Google AI Studio.
@@ -228,14 +224,13 @@ This project is licensed under the MIT License - see the LICENSE file for detail
  * Chrome Extensions Community for documentation and examples
 🔮 Roadmap
 Upcoming Features
- * Batch Processing: Analyze multiple pages at once.
+ * Accuracy: Getting better responses and results
  * Custom Categories: User-defined highlight types.
  * Export Highlights: Save analysis to PDF/Markdown.
- * Team Collaboration: Share highlighted pages.
  * Advanced Filters: Fine-tune AI analysis parameters.
  * Keyboard Shortcuts: Quick access to common actions.
 Known Limitations
- * Limited to ~15,000 characters per analysis (API constraints).
+ * Limited to ~15,000 characters per analysis (API constraints) (workaround:miltiple api calls).
  * Requires manual API key setup for cloud features.
  * Some websites with heavy JavaScript may not work optimally.
 <p align="center">
